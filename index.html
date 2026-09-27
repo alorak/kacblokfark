@@ -51,6 +51,7 @@
   .stack svg{width:var(--brick-w,118px);height:auto;display:block;overflow:visible}
   @keyframes drop{from{transform:translateY(-30px);opacity:0}to{transform:none;opacity:1}}
   .brick{animation:drop .28s cubic-bezier(.2,1.4,.4,1) backwards}
+  .hint-brick{animation:none;pointer-events:none}
 
   .label{
     margin-top:20px;min-width:80px;height:62px;
@@ -190,6 +191,14 @@
     </div>
   </div>
 
+  <div class="field">
+    <span>İpucu</span>
+    <div class="segmented">
+      <label><input type="radio" name="hintMode" value="off"><span>Kapalı</span></label>
+      <label><input type="radio" name="hintMode" value="on"><span>Açık</span></label>
+    </div>
+  </div>
+
   <label class="field">
     <span>Kule yüksekliği / şıklardaki en büyük sayı</span>
     <input type="number" id="maxNum" min="3" max="12" step="1">
@@ -245,6 +254,7 @@ function palette(base){
   };
 }
 const BASES = ["#b0332a", "#2f4f8f", "#e8a713", "#3d8b4f", "#d4691e", "#6b4a9e"];
+const GHOST_LINE = "#98a4c2";
 
 function studPath(u, v, dy, c){
   const [cx, cy] = iso(u, v, dy);
@@ -279,13 +289,45 @@ function brick(dy, c, showStuds, delay){
   </g>`;
 }
 
-function towerIso(n, c){
-  const w = 2 * KX * S, h = S + n * H;
+function ghostStudPath(u, v, dy){
+  const [cx, cy] = iso(u, v, dy);
+  const side = `M ${(cx-RX).toFixed(2)} ${(cy-SH).toFixed(2)}
+                L ${(cx-RX).toFixed(2)} ${cy.toFixed(2)}
+                A ${RX.toFixed(2)} ${RY.toFixed(2)} 0 0 0 ${(cx+RX).toFixed(2)} ${cy.toFixed(2)}
+                L ${(cx+RX).toFixed(2)} ${(cy-SH).toFixed(2)}`;
+  return `<path d="${side}"/>
+          <ellipse cx="${cx.toFixed(2)}" cy="${(cy-SH).toFixed(2)}" rx="${RX.toFixed(2)}" ry="${RY.toFixed(2)}"/>`;
+}
+
+function ghostBrickIso(dy, showStuds){
+  const T = iso(0, 0, dy), R = iso(S, 0, dy), F = iso(S, S, dy), L = iso(0, S, dy);
+  const Rb = [R[0], R[1] + H], Fb = [F[0], F[1] + H], Lb = [L[0], L[1] + H];
+  let studs = "";
+  if (showStuds){
+    const [n1, n2] = STUD_POS;
+    [[n1,n1],[n2,n1],[n1,n2],[n2,n2]].forEach(([u,v]) => studs += ghostStudPath(u, v, dy));
+  }
+  return `<g class="hint-brick" fill="none" stroke="${GHOST_LINE}" stroke-width="2.2"
+             stroke-dasharray="7 6" stroke-linecap="round" stroke-linejoin="round" opacity=".95">
+    <polygon points="${pt(T)} ${pt(R)} ${pt(F)} ${pt(L)}"/>
+    <polygon points="${pt(L)} ${pt(F)} ${pt(Fb)} ${pt(Lb)}"/>
+    <polygon points="${pt(R)} ${pt(F)} ${pt(Fb)} ${pt(Rb)}"/>
+    ${studs}
+  </g>`;
+}
+
+function towerIso(n, c, ghostCount = 0){
+  const total = n + ghostCount;
+  const w = 2 * KX * S, h = S + total * H;
   let body = "";
   for (let i = n - 1; i >= 0; i--){          // alttan üste: üstteki blok alttakini kapatır
-    body += brick(i * H, c, i === 0, (n - 1 - i) * 70);
+    body += brick((ghostCount + i) * H, c, i === 0 && ghostCount === 0, (n - 1 - i) * 70);
   }
-  return `<svg viewBox="${-w/2 - PAD} ${-PAD} ${w + 2*PAD} ${h + 2*PAD}" role="img" aria-label="${n} bloklu kule">
+  for (let i = ghostCount - 1; i >= 0; i--){
+    body += ghostBrickIso(i * H, i === 0);
+  }
+  const hintLabel = ghostCount ? `; ${ghostCount} ipucu bloğu` : "";
+  return `<svg viewBox="${-w/2 - PAD} ${-PAD} ${w + 2*PAD} ${h + 2*PAD}" role="img" aria-label="${n} bloklu kule${hintLabel}">
     ${body}
   </svg>`;
 }
@@ -313,14 +355,34 @@ function brickSide(dy, c, id, showStuds, delay){
   </g>`;
 }
 
-function towerSide(n, c){
+function ghostBrickSide(dy, showStuds){
+  let studs = "";
+  if (showStuds){
+    STUD_POS.forEach(x => {
+      studs += `<rect x="${(x - SW/2).toFixed(2)}" y="${(dy - SH).toFixed(2)}"
+                      width="${SW.toFixed(2)}" height="${(SH + 6).toFixed(2)}" rx="4"/>`;
+    });
+  }
+  return `<g class="hint-brick" fill="none" stroke="${GHOST_LINE}" stroke-width="2.2"
+             stroke-dasharray="7 6" stroke-linecap="round" stroke-linejoin="round" opacity=".95">
+    ${studs}
+    <rect x="0" y="${dy.toFixed(2)}" width="${S}" height="${H}" rx="2.5"/>
+  </g>`;
+}
+
+function towerSide(n, c, ghostCount = 0){
   const id = "g" + (++gradId);
+  const total = n + ghostCount;
   let body = "";
   for (let i = n - 1; i >= 0; i--){
-    body += brickSide(i * H, c, id, i === 0, (n - 1 - i) * 70);
+    body += brickSide((ghostCount + i) * H, c, id, i === 0 && ghostCount === 0, (n - 1 - i) * 70);
   }
-  return `<svg viewBox="${-PAD} ${-SH - PAD} ${S + 2*PAD} ${n*H + SH + 2*PAD}"
-               role="img" aria-label="${n} bloklu kule">
+  for (let i = ghostCount - 1; i >= 0; i--){
+    body += ghostBrickSide(i * H, i === 0);
+  }
+  const hintLabel = ghostCount ? `; ${ghostCount} ipucu bloğu` : "";
+  return `<svg viewBox="${-PAD} ${-SH - PAD} ${S + 2*PAD} ${total*H + SH + 2*PAD}"
+               role="img" aria-label="${n} bloklu kule${hintLabel}">
     <defs>
       <linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="${c.studTop}"/>
@@ -331,9 +393,9 @@ function towerSide(n, c){
   </svg>`;
 }
 
-function tower(n, base){
+function tower(n, base, ghostCount = 0){
   const c = palette(base);
-  return settings.view === "iso" ? towerIso(n, c) : towerSide(n, c);
+  return settings.view === "iso" ? towerIso(n, c, ghostCount) : towerSide(n, c, ghostCount);
 }
 
 /* ---------- oyun ---------- */
@@ -348,7 +410,7 @@ const optionsEl = document.getElementById("options");
 const statusEl = document.getElementById("status");
 
 let round = null, score = 0;
-const settings = { maxNum: 10, maxDiff: 2, view: "side" };
+const settings = { maxNum: 10, maxDiff: 2, view: "side", showHint: false };
 
 // görünüme göre svg kutusunun ölçüleri
 const viewBox = {
@@ -393,8 +455,11 @@ function newRound(){
   let c1 = pick(BASES), c2;
   do { c2 = pick(BASES); } while (c2 === c1);
 
-  stackA.innerHTML = tower(a, c1);
-  stackB.innerHTML = tower(b, c2);
+  const diff = Math.abs(a - b);
+  const ghostA = settings.showHint && a < b ? diff : 0;
+  const ghostB = settings.showHint && b < a ? diff : 0;
+  stackA.innerHTML = tower(a, c1, ghostA);
+  stackB.innerHTML = tower(b, c2, ghostB);
 
   labelA.textContent = hidden === "a" ? "?" : a;
   labelB.textContent = hidden === "b" ? "?" : b;
@@ -441,6 +506,7 @@ document.getElementById("openSettings").addEventListener("click", () => {
   maxNumInput.value = settings.maxNum;
   maxDiffInput.value = settings.maxDiff;
   document.querySelector(`input[name="view"][value="${settings.view}"]`).checked = true;
+  document.querySelector(`input[name="hintMode"][value="${settings.showHint ? "on" : "off"}"]`).checked = true;
   hint.textContent = "";
   dialog.showModal();
 });
@@ -463,6 +529,7 @@ document.getElementById("saveSettings").addEventListener("click", () => {
   settings.maxNum = n;
   settings.maxDiff = d;
   settings.view = document.querySelector('input[name="view"]:checked').value;
+  settings.showHint = document.querySelector('input[name="hintMode"]:checked').value === "on";
   fitBricks();
   dialog.close();
   newRound();
